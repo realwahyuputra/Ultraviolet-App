@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import wisp from "wisp-server-node";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
+import fastifyCors from "@fastify/cors"; // Add this import
 
 // static paths
 import { publicPath } from "ultraviolet-static";
@@ -24,6 +25,17 @@ const fastify = Fastify({
 				else socket.end();
 			});
 	},
+});
+
+// Register CORS plugin - Add this section
+await fastify.register(fastifyCors, {
+	// Allow all origins (for development)
+	origin: true,
+	// Or specify specific origins for production:
+	// origin: ['http://localhost:3000', 'https://yourdomain.com'],
+	methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+	allowedHeaders: ['Content-Type', 'Authorization'],
+	credentials: true
 });
 
 fastify.register(fastifyStatic, {
@@ -55,7 +67,6 @@ fastify.register(fastifyStatic, {
 
 fastify.server.on("listening", () => {
 	const address = fastify.server.address();
-
 	// by default we are listening on 0.0.0.0 (every interface)
 	// we just need to list a few
 	console.log("Listening on:");
@@ -78,7 +89,6 @@ function shutdown() {
 }
 
 let port = parseInt(process.env.PORT || "");
-
 if (isNaN(port)) port = 8080;
 
 fastify.listen({
