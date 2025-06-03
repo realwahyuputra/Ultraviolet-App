@@ -11,6 +11,9 @@ importers:
       '@fastify/static':
         specifier: ^8.0.2
         version: 8.0.2
+      '@fastify/cors':
+        specifier: ^8.0.0
+        version: 8.0.0
       '@mercuryworkshop/bare-mux':
         specifier: ^2.1.6
         version: 2.1.6
