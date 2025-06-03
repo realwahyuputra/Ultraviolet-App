@@ -4,7 +4,6 @@ import { hostname } from "node:os";
 import wisp from "wisp-server-node";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
-import fastifyCors from "@fastify/cors"; // Add this import
 
 // static paths
 import { publicPath } from "ultraviolet-static";
@@ -16,8 +15,23 @@ const fastify = Fastify({
 	serverFactory: (handler) => {
 		return createServer()
 			.on("request", (req, res) => {
+				// Existing headers
 				res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
 				res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+				
+				// Add CORS headers
+				res.setHeader("Access-Control-Allow-Origin", "*");
+				res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+				res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+				res.setHeader("Access-Control-Allow-Credentials", "true");
+				
+				// Handle preflight requests
+				if (req.method === "OPTIONS") {
+					res.writeHead(200);
+					res.end();
+					return;
+				}
+				
 				handler(req, res);
 			})
 			.on("upgrade", (req, socket, head) => {
@@ -25,17 +39,6 @@ const fastify = Fastify({
 				else socket.end();
 			});
 	},
-});
-
-// Register CORS plugin - Add this section
-await fastify.register(fastifyCors, {
-	// Allow all origins (for development)
-	origin: true,
-	// Or specify specific origins for production:
-	// origin: ['http://localhost:3000', 'https://yourdomain.com'],
-	methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-	allowedHeaders: ['Content-Type', 'Authorization'],
-	credentials: true
 });
 
 fastify.register(fastifyStatic, {
