@@ -12,21 +12,17 @@ import { epoxyPath } from "@mercuryworkshop/epoxy-transport";
 import { baremuxPath } from "@mercuryworkshop/bare-mux/node";
 
 const fastify = Fastify({
-	logger: true, // Enable logging to see errors
+	logger: true,
 	serverFactory: (handler) => {
 		return createServer()
 			.on("request", (req, res) => {
 				try {
-					console.log(`${req.method} ${req.url}`); // Log all requests
+					console.log(`${req.method} ${req.url}`);
 					
-					// Existing headers
-					res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-					res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-					
-					// Add CORS headers
+					// Set CORS headers first
 					res.setHeader("Access-Control-Allow-Origin", "*");
 					res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-					res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+					res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
 					res.setHeader("Access-Control-Allow-Credentials", "true");
 					
 					// Handle preflight requests
@@ -36,19 +32,28 @@ const fastify = Fastify({
 						return;
 					}
 					
+					// Only set these headers for non-service routes
+					if (!req.url.startsWith('/uv/service/')) {
+						res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+						res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+					}
+					
 					handler(req, res);
 				} catch (error) {
 					console.error("Server error:", error);
 					if (!res.headersSent) {
-						res.writeHead(500);
-						res.end("Internal Server Error");
+						res.writeHead(500, { 'Content-Type': 'application/json' });
+						res.end(JSON.stringify({ error: error.message }));
 					}
 				}
 			})
 			.on("upgrade", (req, socket, head) => {
 				try {
-					if (req.url.endsWith("/wisp/")) wisp.routeRequest(req, socket, head);
-					else socket.end();
+					if (req.url.endsWith("/wisp/")) {
+						wisp.routeRequest(req, socket, head);
+					} else {
+						socket.end();
+					}
 				} catch (error) {
 					console.error("Upgrade error:", error);
 					socket.end();
@@ -60,48 +65,67 @@ const fastify = Fastify({
 	},
 });
 
-// Add error handler
+// Error handler
 fastify.setErrorHandler(function (error, request, reply) {
 	console.error("Fastify error:", error);
-	reply.status(500).send({ error: "Something went wrong!" });
+	reply.status(500).send({ 
+		error: "Something went wrong!", 
+		details: error.message,
+		url: request.url 
+	});
 });
 
-// Add a test route to check if the server is working
+// Test route
 fastify.get("/test", async (request, reply) => {
 	return { message: "Server is working!", timestamp: new Date().toISOString() };
 });
 
-fastify.register(fastifyStatic, {
-	root: publicPath,
-	decorateReply: true,
+// Health check
+fastify.get("/health", async (request, reply) => {
+	return { status: "OK", ultraviolet: "ready" };
 });
 
-fastify.get("/uv/uv.config.js", (req, res) => {
-	return res.sendFile("uv/uv.config.js", publicPath);
-});
+// Register static file serving
+try {
+	await fastify.register(fastifyStatic, {
+		root: publicPath,
+		decorateReply: true,
+	});
 
-fastify.register(fastifyStatic, {
-	root: uvPath,
-	prefix: "/uv/",
-	decorateReply: false,
-});
+	// UV config route with proper error handling
+	fastify.get("/uv/uv.config.js", async (req, reply) => {
+		try {
+			return reply.sendFile("uv/uv.config.js");
+		} catch (error) {
+			console.error("Error serving uv.config.js:", error);
+			reply.status(500).send({ error: "Failed to load UV config" });
+		}
+	});
 
-fastify.register(fastifyStatic, {
-	root: epoxyPath,
-	prefix: "/epoxy/",
-	decorateReply: false,
-});
+	await fastify.register(fastifyStatic, {
+		root: uvPath,
+		prefix: "/uv/",
+		decorateReply: false,
+	});
 
-fastify.register(fastifyStatic, {
-	root: baremuxPath,
-	prefix: "/baremux/",
-	decorateReply: false,
-});
+	await fastify.register(fastifyStatic, {
+		root: epoxyPath,
+		prefix: "/epoxy/",
+		decorateReply: false,
+	});
+
+	await fastify.register(fastifyStatic, {
+		root: baremuxPath,
+		prefix: "/baremux/",
+		decorateReply: false,
+	});
+
+} catch (error) {
+	console.error("Error registering static routes:", error);
+}
 
 fastify.server.on("listening", () => {
 	const address = fastify.server.address();
-	// by default we are listening on 0.0.0.0 (every interface)
-	// we just need to list a few
 	console.log("Listening on:");
 	console.log(`\thttp://localhost:${address.port}`);
 	console.log(`\thttp://${hostname()}:${address.port}`);
